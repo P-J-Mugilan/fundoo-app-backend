@@ -81,8 +81,7 @@ Refer to the following bounds when designing form validations on the client side
 | :--- | :--- | :---: | :--- |
 | `POST` | `/api/v1/users/register` | Public | Register a new user account |
 | `POST` | `/api/v1/users/login` | Public | Log in and receive JWT token |
-| `GET` | `/api/v1/users/{userId}` | Admin | Get details of a user by ID |
-| `GET` | `/api/v1/users` | Admin | Get list of all users |
+| `GET` | `/api/v1/users?page=0&size=10&sortBy=id&direction=asc` | Admin | Get paginated list of all users |
 | `PUT` | `/api/v1/users/{userId}` | Admin | Update user registration details |
 | `DELETE`| `/api/v1/users/{userId}` | Admin | Mark user as deleted |
 | `POST` | `/api/v1/users/forgot-password` | Public | Send password reset token to email |
@@ -92,7 +91,7 @@ Refer to the following bounds when designing form validations on the client side
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :---: | :--- |
 | `POST` | `/api/v1/notes` | User | Create a new note |
-| `GET` | `/api/v1/notes` | User | Get all notes belonging to the authenticated user |
+| `GET` | `/api/v1/notes?page=0&size=10&sortBy=id&direction=asc` | User | Get paginated notes belonging to authenticated user |
 | `GET` | `/api/v1/notes/{noteId}` | User | Fetch note by ID |
 | `PUT` | `/api/v1/notes/{noteId}` | User | Update title, description, color, states of a note |
 | `DELETE`| `/api/v1/notes/{noteId}` | User | Permanent delete or soft delete depending on trash state |
@@ -286,62 +285,64 @@ Refer to the following bounds when designing form validations on the client side
 }
 ```
 
-#### 2. Get All Notes for User
-* **Endpoint:** `GET /api/v1/notes`
+#### 2. Get All Notes for User (Paginated)
+* **Endpoint:** `GET /api/v1/notes?page=0&size=10&sortBy=id&direction=asc`
+* **Query Parameters:**
+  - `page` (int, default: 0): Page index (0-indexed)
+  - `size` (int, default: 10): Page size
+  - `sortBy` (string, default: "id"): Sort field name
+  - `direction` (string, default: "asc"): Sort direction (`asc` or `desc`)
 * **Security:** Authenticated
 * **Response Body (`200 OK`):**
 ```json
 {
   "statusCode": 200,
   "message": "All notes fetched successfully.",
-  "data": [
-    {
-      "id": 12,
-      "title": "Project Meeting",
-      "description": "Discuss architecture and UI design components with the frontend team.",
-      "color": "#ff9999",
-      "pinned": true,
-      "archived": false,
-      "trashed": false,
-      "ownerId": 1,
-      "ownerEmail": "johndoe@example.com",
-      "labels": [
-        {
-          "id": 3,
-          "name": "Work",
-          "userId": 1,
-          "createdAt": "2026-07-01T09:00:00.000",
-          "updatedAt": "2026-07-01T09:00:00.000"
-        }
-      ],
-      "reminders": [
-        {
-          "id": 5,
-          "noteId": 12,
-          "remindAt": "2026-07-01T15:00:00.000",
-          "status": "PENDING",
-          "notified": false,
-          "createdAt": "2026-07-01T10:05:10.000",
-          "updatedAt": "2026-07-01T10:05:10.000"
-        }
-      ],
-      "collaborators": [
-        {
-          "id": 2,
-          "noteId": 12,
-          "userId": 4,
-          "userEmail": "collaborator@example.com",
-          "userFirstName": "Alice",
-          "userLastName": "Smith",
-          "role": "EDITOR",
-          "createdAt": "2026-07-01T10:06:00.000",
-          "updatedAt": "2026-07-01T10:06:00.000"
-        }
-      ],
-      "createdAt": "2026-07-01T10:05:00.123",
-      "updatedAt": "2026-07-01T10:06:00.123"
-    }
-  ],
+  "data": {
+    "content": [
+      {
+        "id": 12,
+        "title": "Project Meeting",
+        "description": "Discuss architecture and UI design components with the frontend team.",
+        "color": "#ff9999",
+        "pinned": true,
+        "archived": false,
+        "trashed": false,
+        "ownerId": 1,
+        "ownerEmail": "johndoe@example.com",
+        "labels": [],
+        "reminders": [],
+        "collaborators": [],
+        "createdAt": "2026-07-01T10:05:00.123",
+        "updatedAt": "2026-07-01T10:05:00.123"
+      }
+    ],
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 10,
+      "sort": {
+        "empty": false,
+        "sorted": true,
+        "unsorted": false
+      },
+      "offset": 0,
+      "paged": true,
+      "unpaged": false
+    },
+    "totalPages": 1,
+    "totalElements": 1,
+    "last": true,
+    "size": 10,
+    "number": 0,
+    "sort": {
+      "empty": false,
+      "sorted": true,
+      "unsorted": false
+    },
+    "numberOfElements": 1,
+    "first": true,
+    "empty": false
+  },
   "timestamp": "2026-07-01T10:10:00.123"
 }
 ```
@@ -564,8 +565,12 @@ Refer to the following bounds when designing form validations on the client side
 
 ---
 
-## 6. Real-time Notifications & Web Sockets (Future Scope)
-Currently, reminders are fired asynchronously on the backend server every minute. A notification payload is produced to Kafka under the topic `reminder-alerts`. To surface these notifications in the client:
+## 6. Real-time Notifications & Message Brokers (Pluggable Configuration)
+Currently, reminders are fired asynchronously on the backend server every minute. A notification payload is produced dynamically:
+- In **RabbitMQ** mode, it is published to exchange `fundoo.exchange` under the routing key `reminder.alert` (which routes to queue `fundoo.reminder.queue`).
+- In **Kafka** mode, it is produced to the topic `reminder-alerts`.
+
+To surface these notifications in the client:
 1. Integrate a Server-Sent Events (SSE) or WebSocket endpoint (Planned for v2).
 2. For now, client polling or service workers can retrieve active reminders via `GET /api/v1/notes` or check pending alarms.
 
