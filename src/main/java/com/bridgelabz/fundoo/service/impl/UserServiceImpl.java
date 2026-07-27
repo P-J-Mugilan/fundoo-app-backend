@@ -10,6 +10,9 @@ import com.bridgelabz.fundoo.exception.EmailAlreadyExistsException;
 import com.bridgelabz.fundoo.exception.ResourceNotFoundException;
 import com.bridgelabz.fundoo.exception.UserNotFoundException;
 import com.bridgelabz.fundoo.mapper.EntityMapper;
+import com.bridgelabz.fundoo.messaging.event.PasswordResetEvent;
+import com.bridgelabz.fundoo.messaging.event.UserRegisteredEvent;
+import com.bridgelabz.fundoo.messaging.publisher.EventPublisher;
 import com.bridgelabz.fundoo.repository.PasswordResetTokenRepository;
 import com.bridgelabz.fundoo.repository.UserRepository;
 import com.bridgelabz.fundoo.service.UserService;
@@ -49,8 +52,9 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthenticationManager authenticationManager;
-    private final ApplicationEventPublisher eventPublisher;
+//    private final ApplicationEventPublisher eventPublisher;
 
+    private final EventPublisher eventPublisher;
     @Override
     public UserResponseDto registerUser(RegisterRequestDto dto) throws EmailAlreadyExistsException {
         log.info("Registering new user with email: {}", dto.getEmail());
@@ -76,8 +80,16 @@ public class UserServiceImpl implements UserService {
         log.debug("Saved user to database with ID: {}", savedUser.getId());
 
         // Publish event for Kafka / Async processing
-        eventPublisher.publishEvent(savedUser);
+//        eventPublisher.publishEvent(savedUser);
 
+        eventPublisher.publishUserRegistered(
+                UserRegisteredEvent.builder()
+                        .userId(savedUser.getId())
+                        .firstName(savedUser.getFirstName())
+                        .lastName(savedUser.getLastName())
+                        .email(savedUser.getEmail())
+                        .build()
+        );
         return entityMapper.toUserResponseDto(savedUser);
     }
 
@@ -197,8 +209,17 @@ public class UserServiceImpl implements UserService {
         log.info("Generated password reset token for email: {}", dto.getEmail());
 
         // Publish event for sending email asynchronously (will print to logs or kafka)
-        eventPublisher.publishEvent(resetToken);
+//        eventPublisher.publishEvent(resetToken);
+
+        // Publish event for sending email asynchronously by rabbitmq
+        eventPublisher.publishPasswordReset(
+                PasswordResetEvent.builder()
+                        .email(user.getEmail())
+                        .token(token)
+                        .build()
+        );
     }
+
 
     @Override
     public void resetPassword(ResetPasswordDto dto) throws ResourceNotFoundException {
