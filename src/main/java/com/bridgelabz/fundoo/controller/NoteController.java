@@ -7,6 +7,7 @@ import com.bridgelabz.fundoo.service.NoteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -36,9 +37,15 @@ public class NoteController {
     }
 
     @GetMapping
-    public ResponseEntity<APIResponse<List<NoteResponseDto>>> getAllNotes() {
-        log.info("Received request to get all notes for authenticated user");
-        List<NoteResponseDto> response = noteService.getAllNotesForUser();
+    public ResponseEntity<APIResponse<Page<NoteResponseDto>>> getAllNotes(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "asc") String direction
+    ) {
+        log.info("Received request to get paginated notes for authenticated user. page={}, size={}, sortBy={}, direction={}",
+                page, size, sortBy, direction);
+        Page<NoteResponseDto> response = noteService.getAllNotesForUser(page, size, sortBy, direction);
         return ResponseEntity.ok(APIResponse.success(StatusConstants.OK, MessageConstants.NOTES_FETCHED, response));
     }
 

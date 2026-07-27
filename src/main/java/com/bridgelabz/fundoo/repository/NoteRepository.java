@@ -2,6 +2,8 @@ package com.bridgelabz.fundoo.repository;
 
 import com.bridgelabz.fundoo.entity.Note;
 import com.bridgelabz.fundoo.entity.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +17,10 @@ public interface NoteRepository extends JpaRepository<Note,Long> {
     @EntityGraph(attributePaths = {"owner"})
     @Query("SELECT DISTINCT n FROM Note n WHERE n.owner = :owner AND n.deleted = false")
     List<Note> findAllByOwnerAndDeletedFalse(@Param("owner") User owner);
+
+    @EntityGraph(attributePaths = {"owner"})
+    @Query("SELECT n FROM Note n WHERE n.owner = :owner AND n.deleted = false AND n.trashed = false")
+    Page<Note> findAllByOwnerAndDeletedFalseAndTrashedFalse(@Param("owner") User owner, Pageable pageable);
 
     @EntityGraph(attributePaths = {"owner"})
     @Query("SELECT n FROM Note n WHERE n.id = :id AND n.deleted = false")

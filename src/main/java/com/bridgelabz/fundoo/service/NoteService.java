@@ -4,6 +4,7 @@ import com.bridgelabz.fundoo.dto.request.*;
 import com.bridgelabz.fundoo.dto.response.*;
 import com.bridgelabz.fundoo.entity.Note;
 import com.bridgelabz.fundoo.exception.ResourceNotFoundException;
+import org.springframework.data.domain.Page;
 
 import java.util.List;
 
@@ -11,6 +12,7 @@ public interface NoteService {
     NoteResponseDto createNote(NoteRequestDto noteRequest);
     NoteResponseDto getNoteById(Long id) throws ResourceNotFoundException;
     List<NoteResponseDto> getAllNotesForUser();
+    Page<NoteResponseDto> getAllNotesForUser(int page, int size, String sortBy, String direction);
     NoteResponseDto updateNote(Long id, NoteRequestDto noteRequest) throws ResourceNotFoundException;
     void deleteNote(Long id) throws ResourceNotFoundException;
     List<NoteResponseDto> searchNotes(String query);
