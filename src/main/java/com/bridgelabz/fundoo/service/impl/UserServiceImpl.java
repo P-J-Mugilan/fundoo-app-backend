@@ -140,7 +140,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @CachePut(value = "users", key = "#id")
-    public UserResponseDto updateUser(Long id, RegisterRequestDto dto) throws UserNotFoundException {
+    public UserResponseDto updateUser(Long id, UpdateRequestDto dto) throws UserNotFoundException {
         log.info("Updating user details for ID: {}", id);
 
         User user = userRepository.findById(id)

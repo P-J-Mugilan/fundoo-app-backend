@@ -22,7 +22,7 @@ public interface UserService {
             String sortBy,
             String direction
     );
-    UserResponseDto updateUser(Long id, RegisterRequestDto updateRequest) throws UserNotFoundException;
+    UserResponseDto updateUser(Long id, UpdateRequestDto updateRequest) throws UserNotFoundException;
     UserResponseDto updateUserRole(Long id, com.bridgelabz.fundoo.entity.enums.Role role) throws UserNotFoundException;
     void deleteUser(Long id) throws UserNotFoundException;
     void forgotPassword(ForgotPasswordDto forgotPasswordRequest) throws UserNotFoundException;
