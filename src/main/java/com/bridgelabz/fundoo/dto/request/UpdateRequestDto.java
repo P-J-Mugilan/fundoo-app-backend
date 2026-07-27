@@ -15,7 +15,7 @@ import com.bridgelabz.fundoo.constant.ValidationConstants;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RegisterRequestDto {
+public class UpdateRequestDto {
 
     @NotBlank(message = ValidationConstants.FIELD_REQUIRED)
     @Size(min = ValidationConstants.NAME_MIN, max = ValidationConstants.NAME_MAX, message = ValidationConstants.NAME_INVALID)

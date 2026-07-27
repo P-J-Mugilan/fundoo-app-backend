@@ -10,6 +10,9 @@ import com.bridgelabz.fundoo.exception.EmailAlreadyExistsException;
 import com.bridgelabz.fundoo.exception.ResourceNotFoundException;
 import com.bridgelabz.fundoo.exception.UserNotFoundException;
 import com.bridgelabz.fundoo.mapper.EntityMapper;
+import com.bridgelabz.fundoo.messaging.event.PasswordResetEvent;
+import com.bridgelabz.fundoo.messaging.event.UserRegisteredEvent;
+import com.bridgelabz.fundoo.messaging.publisher.EventPublisher;
 import com.bridgelabz.fundoo.repository.PasswordResetTokenRepository;
 import com.bridgelabz.fundoo.repository.UserRepository;
 import com.bridgelabz.fundoo.service.UserService;
@@ -20,6 +23,10 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -45,8 +52,9 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthenticationManager authenticationManager;
-    private final ApplicationEventPublisher eventPublisher;
+//    private final ApplicationEventPublisher eventPublisher;
 
+    private final EventPublisher eventPublisher;
     @Override
     public UserResponseDto registerUser(RegisterRequestDto dto) throws EmailAlreadyExistsException {
         log.info("Registering new user with email: {}", dto.getEmail());
@@ -72,8 +80,16 @@ public class UserServiceImpl implements UserService {
         log.debug("Saved user to database with ID: {}", savedUser.getId());
 
         // Publish event for Kafka / Async processing
-        eventPublisher.publishEvent(savedUser);
+//        eventPublisher.publishEvent(savedUser);
 
+        eventPublisher.publishUserRegistered(
+                UserRegisteredEvent.builder()
+                        .userId(savedUser.getId())
+                        .firstName(savedUser.getFirstName())
+                        .lastName(savedUser.getLastName())
+                        .email(savedUser.getEmail())
+                        .build()
+        );
         return entityMapper.toUserResponseDto(savedUser);
     }
 
@@ -115,17 +131,28 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponseDto> getAllUsers() {
-        log.info("Fetching all active non-deleted users");
-        return userRepository.findAll().stream()
-                .filter(u -> !u.isDeleted())
-                .map(entityMapper::toUserResponseDto)
-                .collect(Collectors.toList());
+    public Page<UserResponseDto> getAllUsers(
+            int page,
+            int size,
+            String sortBy,
+            String direction
+    ) {
+        log.info("Fetching users with pagination. page={}, size={}, sortBy={}, direction={}",
+                page, size, sortBy, direction);
+
+        Sort sort = direction.equalsIgnoreCase("desc")
+                ? Sort.by(sortBy).descending()
+                : Sort.by(sortBy).ascending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return userRepository.
+                findByDeletedFalse(pageable)
+                .map(entityMapper::toUserResponseDto);
     }
 
     @Override
     @CachePut(value = "users", key = "#id")
-    public UserResponseDto updateUser(Long id, RegisterRequestDto dto) throws UserNotFoundException {
+    public UserResponseDto updateUser(Long id, UpdateRequestDto dto) throws UserNotFoundException {
         log.info("Updating user details for ID: {}", id);
 
         User user = userRepository.findById(id)
@@ -182,8 +209,17 @@ public class UserServiceImpl implements UserService {
         log.info("Generated password reset token for email: {}", dto.getEmail());
 
         // Publish event for sending email asynchronously (will print to logs or kafka)
-        eventPublisher.publishEvent(resetToken);
+//        eventPublisher.publishEvent(resetToken);
+
+        // Publish event for sending email asynchronously by rabbitmq
+        eventPublisher.publishPasswordReset(
+                PasswordResetEvent.builder()
+                        .email(user.getEmail())
+                        .token(token)
+                        .build()
+        );
     }
+
 
     @Override
     public void resetPassword(ResetPasswordDto dto) throws ResourceNotFoundException {

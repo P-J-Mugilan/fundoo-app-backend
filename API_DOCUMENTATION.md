@@ -568,3 +568,53 @@ Refer to the following bounds when designing form validations on the client side
 Currently, reminders are fired asynchronously on the backend server every minute. A notification payload is produced to Kafka under the topic `reminder-alerts`. To surface these notifications in the client:
 1. Integrate a Server-Sent Events (SSE) or WebSocket endpoint (Planned for v2).
 2. For now, client polling or service workers can retrieve active reminders via `GET /api/v1/notes` or check pending alarms.
+
+---
+
+## 7. Containerized Operations & Monitoring APIs
+
+When deploying the application in containerized environments (Docker, Docker Compose, Kubernetes), the following operational interfaces and health check endpoints are available.
+
+### Host and Port Mapping
+* **Internal Port:** The application inside the container always runs on port `8080`.
+* **External Port:** Mapped to port `8080` on the host machine by default (configurable in `docker-compose.yml` under `ports` mapping).
+
+### Spring Boot Actuator Endpoints
+These endpoints are exposed publicly under the `/actuator/**` path for integration with container probes and monitoring daemons (e.g. Prometheus, Grafana).
+
+#### 1. Liveness & Readiness Probe
+* **Endpoint:** `GET /actuator/health`
+* **Security:** Public (no Authentication required)
+* **Response Body (`200 OK` - Application healthy):**
+```json
+{
+  "status": "UP"
+}
+```
+* **Response Body (`503 Service Unavailable` - Application unhealthy):**
+```json
+{
+  "status": "DOWN"
+}
+```
+
+#### 2. Service Info Details
+* **Endpoint:** `GET /actuator/info`
+* **Security:** Public
+* **Response Body (`200 OK`):**
+```json
+{
+  "app": {
+    "name": "fundoo",
+    "description": "Fundoo Notes Backend REST Services",
+    "version": "0.0.1-SNAPSHOT"
+  }
+}
+```
+
+#### 3. Micrometer Tracing & Metrics List
+* **Endpoint:** `GET /actuator/metrics`
+* **Security:** Public
+* **Description:** Retrieves the list of metric names monitored by Micrometer (e.g., JVM memory heap, CPU usage, system CPU, HTTP request latency).
+* **Detailed Metric Query:** Retrieve a specific metric by appending the metric name, e.g., `/actuator/metrics/jvm.memory.used`.
+
