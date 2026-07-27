@@ -1,4 +1,4 @@
-# Fundoo Notes Backend - Onboarding & Architecture Guide
+c# Fundoo Notes Backend - Onboarding & Architecture Guide
 
 Welcome to the **Fundoo Notes Backend** development team! This onboarding guide is designed to help new backend developers understand the application architecture, system design, data schemas, messaging infrastructure, caching strategies, and setup instructions.
 
@@ -227,3 +227,70 @@ We use JUnit 5 and Mockito for unit testing. Automated tests use an in-memory H2
 # Run the test suites
 mvn clean test
 ```
+
+---
+
+## 8. Docker Containerization & Orchestration
+
+The application is fully containerized using a multi-stage Docker build, separating compile-time dependencies from the runtime environment.
+
+### Multi-stage Build Flow
+* **Stage 1 (Build):** Compiles the source code and packages the fat JAR using a Maven image on JDK 21. Dependency fetching is separated from code compilation to optimize Docker layer caching.
+* **Stage 2 (Runtime):** Copies the JAR into a lightweight eclipse-temurin JRE 21 base. It runs under a secure, non-root user `spring`.
+
+### Docker Compose Stack Topology
+We configure and run our application stack (application, database, cache, and messaging) using [docker-compose.yml](file:///d:/BridgeLabz/MagicSoftware/fundoo/docker-compose.yml):
+
+```mermaid
+graph TD
+    subgraph Docker Bridge Network
+        App[Fundoo App Container]
+        MySQL[(MySQL Container)]
+        Redis[(Redis Container)]
+        Kafka[(Kafka KRaft Container)]
+    end
+    
+    App -->|Reads/Writes| MySQL
+    App -->|Caches| Redis
+    App -->|Publishes/Consumes| Kafka
+    
+    Host[Host Port 8080] -->|Exposes| App
+    HostMySQL[Host Port 3306] -->|Exposes| MySQL
+    HostRedis[Host Port 6379] -->|Exposes| Redis
+    HostKafka[Host Port 9092] -->|Exposes| Kafka
+```
+
+### Environment Variable Overrides
+Spring Boot automatically overrides properties using standard environment variables passed to the container:
+
+| Environment Variable | Target Spring Property | Default in Docker Compose | Description |
+| :--- | :--- | :--- | :--- |
+| `SPRING_PROFILES_ACTIVE` | `spring.profiles.active` | `dev` | Active Spring profile |
+| `SPRING_DATASOURCE_URL` | `spring.datasource.url` | `jdbc:mysql://mysql:3306/fundoo_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true` | Database connection URL |
+| `SPRING_DATASOURCE_USERNAME` | `spring.datasource.username` | `root` | Database username |
+| `SPRING_DATASOURCE_PASSWORD` | `spring.datasource.password` | `Passwd@123` | Database password |
+| `SPRING_DATA_REDIS_HOST` | `spring.data.redis.host` | `redis` | Redis container hostname |
+| `SPRING_DATA_REDIS_PORT` | `spring.data.redis.port` | `6379` | Redis port |
+| `SPRING_KAFKA_BOOTSTRAP_SERVERS`| `spring.kafka.bootstrap-servers`| `kafka:9092` | Kafka broker bootstrap servers |
+
+---
+
+## 9. CI/CD Pipeline Workflow (Jenkins)
+
+The project CI/CD lifecycle is configured declaratively in the [Jenkinsfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Jenkinsfile).
+
+### Execution Pipeline Diagram
+```mermaid
+graph LR
+    Checkout[1. Checkout] --> BuildTest[2. Build & Test]
+    BuildTest --> Package[3. Package JAR]
+    Package --> DockerBuild[4. Docker Build]
+    DockerBuild -->|branch == 'main'| DockerPush[5. Docker Push]
+    DockerPush -->|branch == 'main'| Deploy[6. Deploy Staging]
+```
+
+### Pipeline Details
+* **Build & Test:** Runs test execution on the target agent platform (`./mvnw` for Linux/macOS, `mvnw.cmd` for Windows).
+* **Test Reporting:** Integrates JUnit results and parses code coverage metrics using the Jenkins **JaCoCo plugin**.
+* **Docker Security:** Uses Jenkins **Credentials Binding** to retrieve secure registry tokens without exposing passwords in the logs.
+

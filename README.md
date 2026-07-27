@@ -55,21 +55,23 @@ Before you compile and run the application, make sure the following checklist is
 
 ---
 
-## Running the Application
+## 🚀 Running the Application
+
+### Option A: Running Locally (Bare Metal)
 
 Follow these steps to build, test, and run the backend locally:
 
-### 1. Compile Code
+#### 1. Compile Code
 ```bash
 mvn clean compile
 ```
 
-### 2. Run Test Suite
+#### 2. Run Test Suite
 ```bash
 mvn test
 ```
 
-### 3. Start Development Server
+#### 3. Start Development Server
 ```bash
 mvn spring-boot:run
 ```
@@ -77,7 +79,61 @@ The server will start on **`http://localhost:8080`**.
 
 ---
 
-##  Frontend Integration & API Documentation
+### Option B: Running with Docker & Docker Compose (Recommended)
+
+To run the entire ecosystem (Spring Boot application, MySQL, Redis, and Kafka) with a single command:
+
+#### Prerequisites
+* Ensure Docker and Docker Desktop are installed and running.
+
+#### 1. Spin Up the Full Stack
+Run the following command from the project root:
+```bash
+docker compose up -d
+```
+This command automatically builds the Spring Boot image using the [Dockerfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Dockerfile), pulls the latest MySQL 8.0, Redis, and Kafka (KRaft mode) images, and starts all services in the background.
+
+> [!NOTE]
+> The Spring Boot application service (`app`) utilizes healthchecks to guarantee it only initializes after `mysql`, `redis`, and `kafka` are fully healthy.
+
+#### 2. Verify Services are Running
+```bash
+docker compose ps
+```
+The application will be accessible at **`http://localhost:8080`**.
+
+#### 3. Stop and Clean the Environment
+To stop the containers and delete the volumes (wipes database and cache):
+```bash
+docker compose down -v
+```
+
+---
+
+## 🛠️ CI/CD Pipeline (Jenkins)
+
+The project includes a production-grade, declarative [Jenkinsfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Jenkinsfile) to automate building, testing, packaging, and publishing Docker images.
+
+### Pipeline Stages
+1. **Checkout**: Pulls the latest code from the source control management system.
+2. **Build & Test**: Automatically detects the platform and runs `./mvnw clean test` (or `mvnw.cmd` on Windows), executing unit tests.
+3. **Post-Test Reporting**: Automatically parses JUnit test XMLs and aggregates JaCoCo code coverage report details directly into Jenkins.
+4. **Package**: Compiles the final executable Spring Boot Fat JAR.
+5. **Docker Build**: Builds the local Docker image using the project's [Dockerfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Dockerfile).
+6. **Docker Push**: Authenticates using Jenkins credentials and pushes the image tagged with the `BUILD_NUMBER` and `latest` to the Docker registry (triggered only on the `main` branch).
+7. **Deploy Staging**: Performs a rolling update or executes deployment scripts (triggered only on the `main` branch).
+
+### Prerequisites for Jenkins Server
+Ensure the following plugins are installed and configured on your Jenkins controller:
+- **Docker Pipeline** (for Docker steps)
+- **Pipeline Utility Steps** (for platform detection)
+- **JUnit Plugin** (for test results rendering)
+- **JaCoCo Plugin** (for code coverage charts)
+- **Credentials Binding Plugin** (for secure Docker login credentials)
+
+---
+
+## 📬 Frontend Integration & API Documentation
 
 For the frontend team, a detailed API Integration and CORS setup guide is available inside the project at:
 * **[docs/frontend-integration.md](file:///d:/BridgeLabz/MagicSoftware/fundoo/docs/frontend-integration.md)**
@@ -87,3 +143,4 @@ This document includes:
 * Required JSON DTO structures and field validation limits.
 * Setup instructions for token authorization headers (`Authorization: Bearer <JWT>`).
 * CORS whitelist information.
+
