@@ -20,6 +20,10 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -115,12 +119,23 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponseDto> getAllUsers() {
-        log.info("Fetching all active non-deleted users");
-        return userRepository.findAll().stream()
-                .filter(u -> !u.isDeleted())
-                .map(entityMapper::toUserResponseDto)
-                .collect(Collectors.toList());
+    public Page<UserResponseDto> getAllUsers(
+            int page,
+            int size,
+            String sortBy,
+            String direction
+    ) {
+        log.info("Fetching users with pagination. page={}, size={}, sortBy={}, direction={}",
+                page, size, sortBy, direction);
+
+        Sort sort = direction.equalsIgnoreCase("desc")
+                ? Sort.by(sortBy).descending()
+                : Sort.by(sortBy).ascending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return userRepository.
+                findByDeletedFalse(pageable)
+                .map(entityMapper::toUserResponseDto);
     }
 
     @Override
