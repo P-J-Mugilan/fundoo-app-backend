@@ -7,6 +7,7 @@ import com.bridgelabz.fundoo.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -54,16 +55,22 @@ public class UserController {
     }
 
     @GetMapping
-    public ResponseEntity<APIResponse<List<UserResponseDto>>> getAllUsers() {
-        log.info("Received request to fetch all users");
-        List<UserResponseDto> response = userService.getAllUsers();
+    public ResponseEntity<APIResponse<Page<UserResponseDto>>> getAllUsers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "id") String sortBy,
+            @RequestParam(defaultValue = "asc") String direction
+    ) {
+        log.info("Received request to fetch all users with pagination. page={}, size={}, sortBy={}, direction={}",
+                page, size, sortBy, direction);
+        Page<UserResponseDto> response = userService.getAllUsers(page, size, sortBy, direction);
         return ResponseEntity.ok(APIResponse.success(StatusConstants.OK, MessageConstants.USERS_FETCHED, response));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<APIResponse<UserResponseDto>> updateUser(
             @PathVariable Long id,
-            @Valid @RequestBody RegisterRequestDto updateRequest
+            @Valid @RequestBody UpdateRequestDto updateRequest
     ) throws Exception {
         log.info("Received request to update user ID: {}", id);
         UserResponseDto response = userService.updateUser(id, updateRequest);

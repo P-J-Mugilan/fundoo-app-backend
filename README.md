@@ -2,6 +2,8 @@
 
 Fundoo is a high-performance, collaborative note-taking web application backend modeled after Google Keep. It provides a RESTful API for managing user profiles, stateless JWT-based authentication, rich-text notes (with pins, archivals, trashing, and custom colors), labels, and real-time collaboration features supported by background schedulers and cache layers.
 
+The messaging architecture has been refactored to support **loose coupling**. The application interfaces exclusively with a generic `EventPublisher` abstraction and can dynamically publish to either **RabbitMQ** (default) or **Apache Kafka** by modifying a simple property value.
+
 ---
 
 ## Pre-Running Checklist (Must Check Before Running!)
@@ -18,21 +20,22 @@ Before you compile and run the application, make sure the following checklist is
   * **Default Username**: `root`
   * **Default Password**: `Passwd@123`
   * **URL**: `jdbc:mysql://localhost:3306/fundoo_db`
-  *(If your local MySQL credentials differ, please update this file before running).*
+  *(If your local MySQL credentials differ, please update this file or define the corresponding environment variables).*
 
 ### 2. Caching Configuration
 * **Redis Server**: The application uses Redis for cache management. Ensure Redis is running on port `6379`.
   * Command to verify Redis: `redis-cli ping` (should respond with `PONG`).
 
 ### 3. Event Broker & Messaging
-* **Apache Kafka**: The application uses Kafka for processing registration events, reminders, and audit logs.
-  * Ensure ZooKeeper and Kafka Broker are running locally at `localhost:9092`.
-  * The application will automatically construct the required topics (`user-events`, `reminder-alerts`, `audit-logs`) upon startup.
+* **Active Broker (RabbitMQ)**: By default, the application uses **RabbitMQ**. Ensure your local RabbitMQ broker is running on port `5672` (management dashboard on port `15672`).
+* **Optional Broker (Apache Kafka)**: To switch the messaging system to Kafka:
+  * Set `messaging.provider=kafka` in properties.
+  * Ensure ZooKeeper/Kafka Broker are running locally at `localhost:9092`.
 
 ### 4. Java SDK Version
 * **JDK Version**: Make sure your local JDK version is set to **Java 21**.
   * Verify in terminal: `java -version`
-  * Verify `JAVA_HOME` environment variable points to your Java 21 path (e.g. `C:\Program Files\Java\jdk-21.0.11` on Windows).
+  * Verify `JAVA_HOME` environment variable points to your Java 21 path.
 
 ### 5. Seeded Admin Account
 * On startup, the application checks if an admin user exists. If not, it automatically seeds:
@@ -50,14 +53,57 @@ Before you compile and run the application, make sure the following checklist is
 * **Persistence**: Spring Data JPA & Hibernate
 * **Database**: MySQL 8.x
 * **Cache**: Spring Data Redis
-* **Messaging**: Spring Kafka
+* **Message Brokers**: RabbitMQ (active default) and Apache Kafka (future/standby)
 * **Scheduler**: Spring Boot Scheduler (handles active reminder checking)
 
 ---
 
 ## 🚀 Running the Application
 
-### Option A: Running Locally (Bare Metal)
+### Option A: Pull & Run Pre-Built Image from Docker Hub (Easiest)
+
+We build and push a production-grade Docker image to Docker Hub under the user account `mugilanjagadeesan`.
+
+To pull the latest image and spin up the full container ecosystem:
+1. Make sure you have [docker-compose.yml](file:///d:/BridgeLabz/MagicSoftware/fundoo/docker-compose.yml) downloaded.
+2. Under the `app` service in `docker-compose.yml`, you can replace the build directive:
+   ```yaml
+   # Replace "build: ." with image:
+   image: mugilanjagadeesan/fundoo-app:latest
+   ```
+3. Launch everything in one command:
+   ```bash
+   docker compose up -d
+   ```
+This pulls the pre-built application image from Docker Hub and launches MySQL, Redis, RabbitMQ, and Kafka alongside it.
+
+---
+
+### Option B: Running with Docker Compose (Local Build)
+
+To build and run the entire ecosystem locally from source code:
+1. Ensure Docker Desktop is installed and running.
+2. Spin up the full stack:
+   ```bash
+   docker compose up --build -d
+   ```
+This automatically builds the Spring Boot image using the [Dockerfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Dockerfile), pulls the latest MySQL, Redis, RabbitMQ, and Kafka images, and links all services.
+
+#### Verify Services are Running:
+```bash
+docker compose ps
+```
+The application will be accessible at **`http://localhost:8080`**.
+
+#### Stop and Clean the Environment:
+To stop the containers and delete the volumes (wipes database and cache):
+```bash
+docker compose down -v
+```
+
+---
+
+### Option C: Running Locally (Bare Metal)
 
 Follow these steps to build, test, and run the backend locally:
 
@@ -79,57 +125,47 @@ The server will start on **`http://localhost:8080`**.
 
 ---
 
-### Option B: Running with Docker & Docker Compose (Recommended)
+## ⚙️ Team Configuration Checklist (`application-dev.properties`)
 
-To run the entire ecosystem (Spring Boot application, MySQL, Redis, and Kafka) with a single command:
+To make it easy for your development team, all sensitive or environment-specific configurations bind to environment variables with local fallbacks in [application-dev.properties](file:///d:/BridgeLabz/MagicSoftware/fundoo/src/main/resources/application-dev.properties):
 
-#### Prerequisites
-* Ensure Docker and Docker Desktop are installed and running.
+| Property Name | Env Variable Name | Default Value | Description |
+|---|---|---|---|
+| `spring.datasource.url` | `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/fundoo_db?allowPublicKeyRetrieval=true&useSSL=false` | Database connection URL |
+| `spring.datasource.username` | `SPRING_DATASOURCE_USERNAME` | `root` | Database username |
+| `spring.datasource.password` | `SPRING_DATASOURCE_PASSWORD` | `Passwd@123` | Database password |
+| `spring.data.redis.host` | `SPRING_REDIS_HOST` | `localhost` | Redis server hostname |
+| `spring.data.redis.port` | `SPRING_REDIS_PORT` | `6379` | Redis server port |
+| `messaging.provider` | `MESSAGING_PROVIDER` | `rabbitmq` | Active message broker (`rabbitmq` or `kafka`) |
+| `spring.rabbitmq.host` | `SPRING_RABBITMQ_HOST` | `localhost` | RabbitMQ server hostname |
+| `spring.rabbitmq.port` | `SPRING_RABBITMQ_PORT` | `5672` | RabbitMQ server port |
+| `spring.kafka.bootstrap-servers` | `SPRING_KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka bootstrap servers |
 
-#### 1. Spin Up the Full Stack
-Run the following command from the project root:
-```bash
-docker compose up -d
-```
-This command automatically builds the Spring Boot image using the [Dockerfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Dockerfile), pulls the latest MySQL 8.0, Redis, and Kafka (KRaft mode) images, and starts all services in the background.
-
-> [!NOTE]
-> The Spring Boot application service (`app`) utilizes healthchecks to guarantee it only initializes after `mysql`, `redis`, and `kafka` are fully healthy.
-
-#### 2. Verify Services are Running
-```bash
-docker compose ps
-```
-The application will be accessible at **`http://localhost:8080`**.
-
-#### 3. Stop and Clean the Environment
-To stop the containers and delete the volumes (wipes database and cache):
-```bash
-docker compose down -v
-```
+Your team members can override any value locally by setting environment variables in their IDE or `.env` files without altering code.
 
 ---
 
-## 🛠️ CI/CD Pipeline (Jenkins)
+## 🛠️ CI/CD Pipelines (Automation)
 
-The project includes a production-grade, declarative [Jenkinsfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Jenkinsfile) to automate building, testing, packaging, and publishing Docker images.
+The project supports dual CI/CD automation setups:
 
-### Pipeline Stages
-1. **Checkout**: Pulls the latest code from the source control management system.
-2. **Build & Test**: Automatically detects the platform and runs `./mvnw clean test` (or `mvnw.cmd` on Windows), executing unit tests.
-3. **Post-Test Reporting**: Automatically parses JUnit test XMLs and aggregates JaCoCo code coverage report details directly into Jenkins.
-4. **Package**: Compiles the final executable Spring Boot Fat JAR.
-5. **Docker Build**: Builds the local Docker image using the project's [Dockerfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Dockerfile).
-6. **Docker Push**: Authenticates using Jenkins credentials and pushes the image tagged with the `BUILD_NUMBER` and `latest` to the Docker registry (triggered only on the `main` branch).
-7. **Deploy Staging**: Performs a rolling update or executes deployment scripts (triggered only on the `main` branch).
+### 1. GitHub Actions (Continuous Integration & Delivery)
+The GitHub Actions workflow is defined in [.github/workflows/docker-publish.yml](file:///d:/BridgeLabz/MagicSoftware/fundoo/.github/workflows/docker-publish.yml).
+- **Trigger:** Pushes or PRs to `dev` or `main`.
+- **Workflow Stages:**
+  - Checks out repository.
+  - Installs JDK 21.
+  - Runs all Maven unit tests.
+  - Builds the Docker image.
+  - Pushes the Docker image tagged with `latest` and `github.sha` to Docker Hub under the `mugilanjagadeesan` account (requires repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`).
 
-### Prerequisites for Jenkins Server
-Ensure the following plugins are installed and configured on your Jenkins controller:
-- **Docker Pipeline** (for Docker steps)
-- **Pipeline Utility Steps** (for platform detection)
-- **JUnit Plugin** (for test results rendering)
-- **JaCoCo Plugin** (for code coverage charts)
-- **Credentials Binding Plugin** (for secure Docker login credentials)
+### 2. Jenkins Pipeline (Continuous Integration & Delivery)
+The Jenkins pipeline is defined in the [Jenkinsfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Jenkinsfile).
+- **Workflow Stages:**
+  - **Checkout:** Pulls latest branch code.
+  - **Build & Test:** Runs `mvn clean test`.
+  - **Docker Build:** Builds the application image and tags it with `latest` and Jenkins `${BUILD_NUMBER}`.
+  - **Docker Push:** Logs in securely using the Jenkins credentials helper (`dockerhub-credentials`) and pushes the image tags to Docker Hub.
 
 ---
 
@@ -137,10 +173,3 @@ Ensure the following plugins are installed and configured on your Jenkins contro
 
 For the frontend team, a detailed API Integration and CORS setup guide is available inside the project at:
 * **[docs/frontend-integration.md](file:///d:/BridgeLabz/MagicSoftware/fundoo/docs/frontend-integration.md)**
-
-This document includes:
-* Detailed endpoint tables for User, Notes, Labels, Collaborators, and Reminders.
-* Required JSON DTO structures and field validation limits.
-* Setup instructions for token authorization headers (`Authorization: Bearer <JWT>`).
-* CORS whitelist information.
-

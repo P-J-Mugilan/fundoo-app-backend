@@ -1,6 +1,6 @@
-c# Fundoo Notes Backend - Onboarding & Architecture Guide
+# Fundoo Notes Backend - Onboarding & Architecture Guide
 
-Welcome to the **Fundoo Notes Backend** development team! This onboarding guide is designed to help new backend developers understand the application architecture, system design, data schemas, messaging infrastructure, caching strategies, and setup instructions.
+Welcome to the **Fundoo Notes Backend** development team! This onboarding guide is designed to help new backend developers understand the application architecture, system design, data schemas, messaging infrastructure, caching strategies, setup instructions, and deployment pipelines.
 
 ---
 
@@ -18,20 +18,25 @@ graph TD
     Service --> Repo[Repositories - Spring Data JPA]
     Repo --> DB[(MySQL Relational DB)]
     
-    Service -->|Spring Application Event| EventListener[UserEventListener]
-    EventListener -->|Asynchronous Produce| Kafka([Apache Kafka Broker])
+    Service -->|Dynamic Event| EventPublisher[EventPublisher Interface]
+    EventPublisher -->|messaging.provider=rabbitmq| RabbitMQPublisher[RabbitMQPublisher]
+    EventPublisher -->|messaging.provider=kafka| KafkaPublisher[KafkaPublisher]
+    
+    RabbitMQPublisher -->|Publish| RabbitMQ([RabbitMQ Message Broker])
+    KafkaPublisher -->|Publish| Kafka([Apache Kafka Broker])
     
     Scheduler[ReminderScheduler] -->|Every Minute Cron| Repo
-    Scheduler -->|Publish Alert| Kafka
+    Scheduler -->|Publish Alert| EventPublisher
     
-    Kafka -->|Consume Events| KafkaConsumer[UserKafkaConsumer]
+    RabbitMQ -->|Consume| EmailConsumer[EmailConsumer]
+    Kafka -->|Consume| UserKafkaConsumer[UserKafkaConsumer]
 ```
 
 ### Key Architectural Layers
-1. **Controller Layer:** Exposes endpoints defined in [ApiConstants](file:///d:/BridgeLabz/MagicSoftware/fundoo/src/main/java/com/bridgelabz/fundoo/constant/ApiConstants.java). Standardizes return types using `ResponseEntity<APIResponse<T>>`.
-2. **Service Layer:** Houses core business logic, handles transactions, caches heavy read queries via Redis annotations, and fires Spring internal events.
-3. **Repository Layer:** Database abstraction interface using Spring Data JPA. Focuses on preventing N+1 queries using optimized `JOIN FETCH` statements.
-4. **Messaging & Schedulers:** Decouples heavy or time-delayed logic (e.g., email dispatch, reminder alerts) into asynchronous event emitters and message queues.
+1. **Controller Layer:** Exposes endpoints defined in [ApiConstants](file:///d:/BridgeLabz/MagicSoftware/fundoo/src/main/java/com/bridgelabz/fundoo/constant/ApiConstants.java). Standardizes return types using `ResponseEntity<APIResponse<T>>`. Fixes are applied to support paginated resources.
+2. **Service Layer:** Houses core business logic, handles transactions, caches heavy read queries via Redis annotations, and fires generic domain events.
+3. **Repository Layer:** Database abstraction interface using Spring Data JPA. Focuses on preventing N+1 queries using optimized `JOIN FETCH` statements and supports paginated listings.
+4. **Loosely-Coupled Messaging:** Abstracts message broker communications using an `EventPublisher` interface. The system dynamically targets **RabbitMQ** or **Apache Kafka** based on `messaging.provider` properties.
 
 ---
 
@@ -97,27 +102,6 @@ erDiagram
   - `name` (VARCHAR(100), NOT NULL)
   - `user_id` (BIGINT, NOT NULL)
 
-#### D. `note_labels` Join Table (Many-to-Many)
-* **Columns:**
-  - `note_id` (BIGINT, Foreign Key references `notes(id)`)
-  - `label_id` (BIGINT, Foreign Key references `labels(id)`)
-
-#### E. `collaborators` Table
-* **Unique Constraints:** `uk_note_user` on `(note_id, user_id)` (prevents duplicating same collaborator on a single note)
-* **Columns:**
-  - `id` (BIGINT, Primary Key, Auto-increment)
-  - `note_id` (BIGINT, NOT NULL, Foreign Key)
-  - `user_id` (BIGINT, NOT NULL, Foreign Key)
-  - `role` (VARCHAR(30)) - values: `OWNER`, `EDITOR`, `VIEWER`, `ADMIN`
-
-#### F. `reminders` Table
-* **Columns:**
-  - `id` (BIGINT, Primary Key, Auto-increment)
-  - `remind_at` (DATETIME, NOT NULL)
-  - `status` (VARCHAR(30)) - values: `PENDING`, `COMPLETED`, `SNOOZED`, `CANCELLED`
-  - `notified` (BOOLEAN, default false)
-  - `note_id` (BIGINT, NOT NULL, Foreign Key)
-
 ---
 
 ## 3. Caching Architecture (Redis)
@@ -138,46 +122,33 @@ To maximize throughput and limit heavy MySQL read operations, Redis is integrate
 
 ---
 
-## 4. Message Broker Architecture (Apache Kafka)
+## 4. Message Broker Architecture (Loosely Coupled)
 
-The application publishes domain event records to Kafka topics. This decoupling allows consumer systems (like external mail servers, push notification microservices, audit log engines) to process jobs asynchronously.
+The backend provides pluggable messaging support via `EventPublisher`. The active publisher is determined dynamically at startup:
 
-### Topics Configuration
-The following topics are declared automatically in [KafkaConfig](file:///d:/BridgeLabz/MagicSoftware/fundoo/src/main/java/com/bridgelabz/fundoo/config/KafkaConfig.java):
+### A. RabbitMQ Topology (Default Mode)
+- **Exchange:** `fundoo.exchange` (Topic Exchange)
+- **Queues & Routing Keys:**
+  1. `fundoo.user.queue` (bound via `user.register` routing key)
+  2. `fundoo.password.queue` (bound via `password.reset` routing key)
+  3. `fundoo.reminder.queue` (bound via `reminder.alert` routing key)
+- **Consumer:** [EmailConsumer](file:///d:/BridgeLabz/MagicSoftware/fundoo/src/main/java/com/bridgelabz/fundoo/messaging/consumer/EmailConsumer.java) handles RabbitMQ listeners.
 
-| Topic Name | Partitions | Replicas | Producer | Trigger Triggered |
-| :--- | :---: | :---: | :--- | :--- |
-| **`user-events`** | 3 | 1 | `UserEventListener` | User registration or forgot-password token request |
-| **`reminder-alerts`**| 3 | 1 | `ReminderScheduler`| Chronological reminder job becomes due |
-| **`audit-logs`** | 3 | 1 | `UserEventListener` | General user and system state updates |
-
-### Event Lifecycle Example
-1. A user triggers `/api/v1/users/register`.
-2. The user is saved to the database, and a Spring `ApplicationEvent` is published internally.
-3. The asynchronous `UserEventListener` captures the event.
-4. It formats a JSON payload and calls `UserEventProducer.sendEvent("user-events", userId, payload)`.
-5. The local `UserKafkaConsumer` catches the message and logs it (acts as a consumer placeholder).
-
----
-
-## 5. Security & Authentication Setup
-
-* **Framework:** Spring Security 6.x
-* **Session Policy:** `SessionCreationPolicy.STATELESS` (stateless REST APIs)
-* **Filter Chain:** `JwtAuthenticationFilter` is added before `UsernamePasswordAuthenticationFilter`.
-* **Flow:**
-  1. Extraction: Token is extracted from the `Authorization: Bearer <token>` header.
-  2. Verification: Verified against HMAC-256 secret key.
-  3. Authentication: Resolves user details from database, registers `UsernamePasswordAuthenticationToken` in Spring's security context.
+### B. Apache Kafka Topology (Standby/Alternative Mode)
+- **Topics:**
+  1. `user-events` (partitions=3, replicas=1)
+  2. `reminder-alerts` (partitions=3, replicas=1)
+  3. `audit-logs` (partitions=3, replicas=1)
+- **Consumer:** [UserKafkaConsumer](file:///d:/BridgeLabz/MagicSoftware/fundoo/src/main/java/com/bridgelabz/fundoo/listener/UserKafkaConsumer.java) handles Kafka listeners.
 
 ---
 
-## 6. Local Development Onboarding Setup
+## 5. Local Development Onboarding Setup
 
 ### Prerequisites
 * **JDK:** Version 21
 * **Build System:** Apache Maven 3.x
-* **Databases/Brokers:** MySQL Server, Redis Server, Apache Kafka
+* **Databases/Brokers:** MySQL Server, Redis Server, RabbitMQ (or Apache Kafka)
 
 ### Setup Steps
 
@@ -188,23 +159,26 @@ CREATE DATABASE fundoo_db;
 ```
 
 #### Step 2: Configure Environment Properties
-Create or edit `src/main/resources/application-dev.properties` to match your local services:
+Create or edit `src/main/resources/application-dev.properties` to match your local services (or override via environment variables):
 ```properties
 # Database connection settings
-spring.datasource.url=jdbc:mysql://localhost:3306/fundoo_db
-spring.datasource.username=your_mysql_username
-spring.datasource.password=your_mysql_password
+spring.datasource.url=jdbc:mysql://localhost:3306/fundoo_db?allowPublicKeyRetrieval=true&useSSL=false
+spring.datasource.username=root
+spring.datasource.password=Passwd@123
 
-# Kafka broker connection
-spring.kafka.bootstrap-servers=localhost:9092
+# Messaging Broker Configuration (rabbitmq or kafka)
+messaging.provider=rabbitmq
+
+# RabbitMQ Settings
+spring.rabbitmq.host=localhost
+spring.rabbitmq.port=5672
 
 # Redis connection
-spring.data.redis.host=localhost:6379
+spring.data.redis.host=localhost
 spring.data.redis.port=6379
 ```
 
 #### Step 3: Run Build & Boot
-Run the following commands in the workspace root:
 ```powershell
 # Clean build and compile
 mvn clean compile
@@ -215,28 +189,12 @@ mvn spring-boot:run
 
 Once booted, the server starts on port `8080`.
 * **Swagger Documentation URL:** `http://localhost:8080/swagger-ui/index.html`
-* **API base path:** `http://localhost:8080/api/v1`
 
 ---
 
-## 7. Testing Setup
+## 6. Docker Containerization & Orchestration
 
-We use JUnit 5 and Mockito for unit testing. Automated tests use an in-memory H2 database, bypassing active Kafka and Redis brokers. This allows unit tests to compile and pass even if local services are offline.
-
-```powershell
-# Run the test suites
-mvn clean test
-```
-
----
-
-## 8. Docker Containerization & Orchestration
-
-The application is fully containerized using a multi-stage Docker build, separating compile-time dependencies from the runtime environment.
-
-### Multi-stage Build Flow
-* **Stage 1 (Build):** Compiles the source code and packages the fat JAR using a Maven image on JDK 21. Dependency fetching is separated from code compilation to optimize Docker layer caching.
-* **Stage 2 (Runtime):** Copies the JAR into a lightweight eclipse-temurin JRE 21 base. It runs under a secure, non-root user `spring`.
+The application is containerized using a multi-stage Docker build separating compilation from runtime.
 
 ### Docker Compose Stack Topology
 We configure and run our application stack (application, database, cache, and messaging) using [docker-compose.yml](file:///d:/BridgeLabz/MagicSoftware/fundoo/docker-compose.yml):
@@ -247,50 +205,24 @@ graph TD
         App[Fundoo App Container]
         MySQL[(MySQL Container)]
         Redis[(Redis Container)]
+        RabbitMQ[(RabbitMQ Container)]
         Kafka[(Kafka KRaft Container)]
     end
     
     App -->|Reads/Writes| MySQL
     App -->|Caches| Redis
-    App -->|Publishes/Consumes| Kafka
-    
-    Host[Host Port 8080] -->|Exposes| App
-    HostMySQL[Host Port 3306] -->|Exposes| MySQL
-    HostRedis[Host Port 6379] -->|Exposes| Redis
-    HostKafka[Host Port 9092] -->|Exposes| Kafka
+    App -->|Publishes/Consumes| RabbitMQ
+    App -->|Optional Publishes/Consumes| Kafka
 ```
-
-### Environment Variable Overrides
-Spring Boot automatically overrides properties using standard environment variables passed to the container:
-
-| Environment Variable | Target Spring Property | Default in Docker Compose | Description |
-| :--- | :--- | :--- | :--- |
-| `SPRING_PROFILES_ACTIVE` | `spring.profiles.active` | `dev` | Active Spring profile |
-| `SPRING_DATASOURCE_URL` | `spring.datasource.url` | `jdbc:mysql://mysql:3306/fundoo_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true` | Database connection URL |
-| `SPRING_DATASOURCE_USERNAME` | `spring.datasource.username` | `root` | Database username |
-| `SPRING_DATASOURCE_PASSWORD` | `spring.datasource.password` | `Passwd@123` | Database password |
-| `SPRING_DATA_REDIS_HOST` | `spring.data.redis.host` | `redis` | Redis container hostname |
-| `SPRING_DATA_REDIS_PORT` | `spring.data.redis.port` | `6379` | Redis port |
-| `SPRING_KAFKA_BOOTSTRAP_SERVERS`| `spring.kafka.bootstrap-servers`| `kafka:9092` | Kafka broker bootstrap servers |
 
 ---
 
-## 9. CI/CD Pipeline Workflow (Jenkins)
+## 7. CI/CD Pipelines
 
-The project CI/CD lifecycle is configured declaratively in the [Jenkinsfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Jenkinsfile).
+### 1. GitHub Actions Workflow
+Defined in [.github/workflows/docker-publish.yml](file:///d:/BridgeLabz/MagicSoftware/fundoo/.github/workflows/docker-publish.yml).
+It triggers on pushes and pull requests to `dev` and `main` branches. It validates the build by running JUnit tests, compiles the Docker image, and automatically pushes the image tags (`latest`, and Git SHA commit tags) to Docker Hub under the `mugilanjagadeesan/fundoo-app` repository.
 
-### Execution Pipeline Diagram
-```mermaid
-graph LR
-    Checkout[1. Checkout] --> BuildTest[2. Build & Test]
-    BuildTest --> Package[3. Package JAR]
-    Package --> DockerBuild[4. Docker Build]
-    DockerBuild -->|branch == 'main'| DockerPush[5. Docker Push]
-    DockerPush -->|branch == 'main'| Deploy[6. Deploy Staging]
-```
-
-### Pipeline Details
-* **Build & Test:** Runs test execution on the target agent platform (`./mvnw` for Linux/macOS, `mvnw.cmd` for Windows).
-* **Test Reporting:** Integrates JUnit results and parses code coverage metrics using the Jenkins **JaCoCo plugin**.
-* **Docker Security:** Uses Jenkins **Credentials Binding** to retrieve secure registry tokens without exposing passwords in the logs.
-
+### 2. Jenkins declarative pipeline
+Defined in the [Jenkinsfile](file:///d:/BridgeLabz/MagicSoftware/fundoo/Jenkinsfile).
+It automates checking out code, running Maven test goals, executing local Docker builds, logging into Docker Hub securely using Credentials Binding, and pushing the tagged images.

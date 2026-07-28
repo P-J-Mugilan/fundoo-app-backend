@@ -5,6 +5,7 @@ import com.bridgelabz.fundoo.entity.User;
 import com.bridgelabz.fundoo.messaging.UserEventProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
@@ -12,6 +13,10 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@ConditionalOnProperty(
+        name = "messaging.provider",
+        havingValue = "kafka"
+)
 public class UserEventListener {
 
     private final UserEventProducer eventProducer;

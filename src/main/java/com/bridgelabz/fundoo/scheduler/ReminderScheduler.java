@@ -2,7 +2,8 @@ package com.bridgelabz.fundoo.scheduler;
 
 import com.bridgelabz.fundoo.entity.Reminder;
 import com.bridgelabz.fundoo.entity.enums.ReminderStatus;
-import com.bridgelabz.fundoo.messaging.UserEventProducer;
+import com.bridgelabz.fundoo.messaging.event.ReminderAlertEvent;
+import com.bridgelabz.fundoo.messaging.publisher.EventPublisher;
 import com.bridgelabz.fundoo.repository.ReminderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +20,7 @@ import java.util.List;
 public class ReminderScheduler {
 
     private final ReminderRepository reminderRepository;
-    private final UserEventProducer eventProducer;
+    private final EventPublisher eventPublisher;
 
     @Scheduled(cron = "0 * * * * *") // Runs every minute at the 00th second
     @Transactional
@@ -43,13 +44,16 @@ public class ReminderScheduler {
                 String ownerEmail = reminder.getNote().getOwner().getEmail();
                 String noteTitle = reminder.getNote().getTitle();
                 
-                String alertMessage = String.format(
-                        "{\"reminderId\": %d, \"noteId\": %d, \"title\": \"%s\", \"ownerEmail\": \"%s\", \"remindAt\": \"%s\"}",
-                        reminder.getId(), reminder.getNote().getId(), noteTitle, ownerEmail, reminder.getRemindAt()
-                );
+                ReminderAlertEvent alertEvent = ReminderAlertEvent.builder()
+                        .reminderId(reminder.getId())
+                        .noteId(reminder.getNote().getId())
+                        .title(noteTitle)
+                        .ownerEmail(ownerEmail)
+                        .remindAt(reminder.getRemindAt().toString())
+                        .build();
 
-                // Publish to Kafka reminder-alerts topic
-                eventProducer.sendEvent("reminder-alerts", ownerEmail, alertMessage);
+                // Publish using loosely-coupled EventPublisher
+                eventPublisher.publishReminderAlert(alertEvent);
 
                 // Update status to prevent duplicated notifications
                 reminder.setNotified(true);

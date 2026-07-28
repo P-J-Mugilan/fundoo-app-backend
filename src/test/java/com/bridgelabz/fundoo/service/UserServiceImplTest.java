@@ -16,7 +16,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
+import com.bridgelabz.fundoo.messaging.event.UserRegisteredEvent;
+import com.bridgelabz.fundoo.messaging.publisher.EventPublisher;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -46,7 +47,7 @@ public class UserServiceImplTest {
     private AuthenticationManager authenticationManager;
 
     @Mock
-    private ApplicationEventPublisher eventPublisher;
+    private EventPublisher eventPublisher;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -99,7 +100,7 @@ public class UserServiceImplTest {
         assertNotNull(result);
         assertEquals(userResponse.getEmail(), result.getEmail());
         verify(userRepository, times(1)).save(any(User.class));
-        verify(eventPublisher, times(1)).publishEvent(any(User.class));
+        verify(eventPublisher, times(1)).publishUserRegistered(any(UserRegisteredEvent.class));
     }
 
     @Test

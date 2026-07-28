@@ -1,12 +1,17 @@
 package com.bridgelabz.fundoo.listener;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
 @org.springframework.context.annotation.Profile("!test")
+@ConditionalOnProperty(
+        name = "messaging.provider",
+        havingValue = "kafka"
+)
 public class UserKafkaConsumer {
 
     @KafkaListener(topics = "user-events", groupId = "fundoo-group")
